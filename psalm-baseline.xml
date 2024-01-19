@@ -312,9 +312,6 @@
     <ArgumentTypeCoercion>
       <code><![CDATA[$stmt->cond]]></code>
     </ArgumentTypeCoercion>
-    <RiskyTruthyFalsyComparison>
-      <code><![CDATA[$for_context->branch_point]]></code>
-    </RiskyTruthyFalsyComparison>
   </file>
   <file src="src/Psalm/Internal/Analyzer/Statements/Block/ForeachAnalyzer.php">
     <ConflictingReferenceConstraint>
@@ -363,6 +360,11 @@
       <code><![CDATA[$statements_analyzer->getTemplateTypeMap()]]></code>
     </RiskyTruthyFalsyComparison>
   </file>
+  <file src="src/Psalm/Internal/Analyzer/Statements/Block/LoopAnalyzer.php">
+    <RiskyTruthyFalsyComparison>
+      <code><![CDATA[$for_context->branch_point]]></code>
+    </RiskyTruthyFalsyComparison>
+  </file>
   <file src="src/Psalm/Internal/Analyzer/Statements/Block/SwitchAnalyzer.php">
     <InvalidPropertyAssignmentValue>
       <code><![CDATA[$context->assigned_var_ids += $switch_scope->new_assigned_var_ids]]></code>
@@ -395,11 +397,6 @@
   <file src="src/Psalm/Internal/Analyzer/Statements/Block/TryAnalyzer.php">
     <RiskyTruthyFalsyComparison>
       <code><![CDATA[$try_context->branch_point]]></code>
-    </RiskyTruthyFalsyComparison>
-  </file>
-  <file src="src/Psalm/Internal/Analyzer/Statements/Block/WhileAnalyzer.php">
-    <RiskyTruthyFalsyComparison>
-      <code><![CDATA[$while_context->branch_point]]></code>
     </RiskyTruthyFalsyComparison>
   </file>
   <file src="src/Psalm/Internal/Analyzer/Statements/Expression/ArrayAnalyzer.php">
@@ -1592,10 +1589,6 @@
     <RedundantCondition>
       <code><![CDATA[$config_file_path !== null]]></code>
     </RedundantCondition>
-    <ReservedWord>
-      <code><![CDATA[$input->getArgument('pluginName')]]></code>
-      <code><![CDATA[$input->getOption('config')]]></code>
-    </ReservedWord>
   </file>
   <file src="src/Psalm/Internal/PluginManager/Command/ShowCommand.php">
     <RedundantCondition>
