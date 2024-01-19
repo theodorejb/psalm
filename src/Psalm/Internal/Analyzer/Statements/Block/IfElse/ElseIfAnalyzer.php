@@ -267,11 +267,9 @@ final class ElseIfAnalyzer
             $outer_context->removeVarFromConflictingClauses($var_id);
         }
 
-        /** @var array<string, int> */
         $new_stmts_assigned_var_ids = $elseif_context->assigned_var_ids;
         $elseif_context->assigned_var_ids = $pre_stmts_assigned_var_ids + $new_stmts_assigned_var_ids;
 
-        /** @var array<string, bool> */
         $new_stmts_possibly_assigned_var_ids = $elseif_context->possibly_assigned_var_ids;
         $elseif_context->possibly_assigned_var_ids =
             $pre_stmts_possibly_assigned_var_ids + $new_stmts_possibly_assigned_var_ids;
@@ -305,6 +303,7 @@ final class ElseIfAnalyzer
         );
         // has a return/throw at end
         $has_ending_statements = $final_actions === [ScopeAnalyzer::ACTION_END];
+
         $has_leaving_statements = $has_ending_statements
             || (count($final_actions) && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
 
@@ -369,23 +368,9 @@ final class ElseIfAnalyzer
 
             $possibly_assigned_var_ids = $new_stmts_possibly_assigned_var_ids;
 
-            if ($has_leaving_statements && $elseif_context->loop_scope) {
-                if (!$has_continue_statement && !$has_break_statement) {
-                    $if_scope->new_vars_possibly_in_scope = array_merge(
-                        $vars_possibly_in_scope,
-                        $if_scope->new_vars_possibly_in_scope,
-                    );
-                    $if_scope->possibly_assigned_var_ids = array_merge(
-                        $possibly_assigned_var_ids,
-                        $if_scope->possibly_assigned_var_ids,
-                    );
-                }
-
-                $elseif_context->loop_scope->vars_possibly_in_scope = array_merge(
-                    $vars_possibly_in_scope,
-                    $elseif_context->loop_scope->vars_possibly_in_scope,
-                );
-            } elseif (!$has_leaving_statements) {
+            if (!$has_leaving_statements ||
+                $elseif_context->loop_scope && !$has_continue_statement && !$has_break_statement
+            ) {
                 $if_scope->new_vars_possibly_in_scope = array_merge(
                     $vars_possibly_in_scope,
                     $if_scope->new_vars_possibly_in_scope,
@@ -393,6 +378,13 @@ final class ElseIfAnalyzer
                 $if_scope->possibly_assigned_var_ids = array_merge(
                     $possibly_assigned_var_ids,
                     $if_scope->possibly_assigned_var_ids,
+                );
+            }
+
+            if ($has_leaving_statements && $elseif_context->loop_scope) {
+                $elseif_context->loop_scope->vars_possibly_in_scope = array_merge(
+                    $vars_possibly_in_scope,
+                    $elseif_context->loop_scope->vars_possibly_in_scope,
                 );
             }
         }
