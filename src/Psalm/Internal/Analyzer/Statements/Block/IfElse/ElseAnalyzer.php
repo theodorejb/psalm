@@ -111,11 +111,9 @@ final class ElseAnalyzer
             $outer_context->removeVarFromConflictingClauses($var_id);
         }
 
-        /** @var array<string, int> */
         $new_assigned_var_ids = $else_context->assigned_var_ids;
         $else_context->assigned_var_ids += $pre_stmts_assigned_var_ids;
 
-        /** @var array<string, bool> */
         $new_possibly_assigned_var_ids = $else_context->possibly_assigned_var_ids;
         $else_context->possibly_assigned_var_ids += $pre_possibly_assigned_var_ids;
 
@@ -195,21 +193,9 @@ final class ElseAnalyzer
 
             $possibly_assigned_var_ids = $new_possibly_assigned_var_ids;
 
-            if ($has_leaving_statements) {
-                if ($else_context->loop_scope) {
-                    if (!$has_continue_statement && !$has_break_statement) {
-                        $if_scope->new_vars_possibly_in_scope = array_merge(
-                            $vars_possibly_in_scope,
-                            $if_scope->new_vars_possibly_in_scope,
-                        );
-                    }
-
-                    $else_context->loop_scope->vars_possibly_in_scope = array_merge(
-                        $vars_possibly_in_scope,
-                        $else_context->loop_scope->vars_possibly_in_scope,
-                    );
-                }
-            } else {
+            if (!$has_leaving_statements ||
+                $else_context->loop_scope && !$has_continue_statement && !$has_break_statement
+            ) {
                 $if_scope->new_vars_possibly_in_scope = array_merge(
                     $vars_possibly_in_scope,
                     $if_scope->new_vars_possibly_in_scope,
@@ -218,6 +204,13 @@ final class ElseAnalyzer
                 $if_scope->possibly_assigned_var_ids = array_merge(
                     $possibly_assigned_var_ids,
                     $if_scope->possibly_assigned_var_ids,
+                );
+            }
+
+            if ($has_leaving_statements && $else_context->loop_scope) {
+                $else_context->loop_scope->vars_possibly_in_scope = array_merge(
+                    $vars_possibly_in_scope,
+                    $else_context->loop_scope->vars_possibly_in_scope,
                 );
             }
         }
