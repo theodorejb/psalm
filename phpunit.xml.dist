@@ -52,4 +52,7 @@
     <php>
         <const name="__IS_TEST_ENV__" value="1" />
     </php>
+    <extensions>
+        <extension class="Ergebnis\PHPUnit\SlowTestDetector\Extension"/>
+    </extensions>
 </phpunit>
