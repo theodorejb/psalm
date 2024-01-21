@@ -34,7 +34,6 @@ use function array_key_exists;
 use function array_keys;
 use function array_merge;
 use function array_reduce;
-use function count;
 use function in_array;
 use function preg_match;
 use function preg_quote;
@@ -176,7 +175,7 @@ final class IfAnalyzer
         $has_ending_statements = $final_actions === [ScopeAnalyzer::ACTION_END];
 
         $has_leaving_statements = $has_ending_statements
-            || (count($final_actions) && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
+            || ($final_actions && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
 
         $has_break_statement = $final_actions === [ScopeAnalyzer::ACTION_BREAK];
         $has_continue_statement = $final_actions === [ScopeAnalyzer::ACTION_CONTINUE];
