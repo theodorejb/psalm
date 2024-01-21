@@ -94,6 +94,8 @@ final class IfElseAnalyzer
             }
         }
 
+        $branch_point = $context->branch_point ?: (int) $stmt->getAttribute('startFilePos');
+
         try {
             $if_conditional_scope = IfConditionalAnalyzer::analyze(
                 $statements_analyzer,
@@ -101,7 +103,7 @@ final class IfElseAnalyzer
                 $context,
                 $codebase,
                 $if_scope,
-                $context->branch_point ?: (int) $stmt->getAttribute('startFilePos'),
+                $branch_point,
             );
 
             // this is the context for stuff that happens within the `if` block
@@ -140,7 +142,6 @@ final class IfElseAnalyzer
         $if_clauses_handled = [];
         foreach ($if_clauses as $clause) {
             $keys = array_keys($clause->possibilities);
-
             $mixed_var_ids = array_diff($mixed_var_ids, $keys);
 
             foreach ($keys as $key) {
@@ -161,7 +162,7 @@ final class IfElseAnalyzer
 
         // this will see whether any of the clauses in set A conflict with the clauses in set B
         AlgebraAnalyzer::checkForParadox(
-            $context->clauses,
+            $entry_clauses,
             $if_clauses,
             $statements_analyzer,
             $stmt->cond,
