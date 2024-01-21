@@ -58,11 +58,6 @@ final class IfScope
     public array $if_cond_changed_var_ids = [];
 
     /**
-     * @var array<string, string>|null
-     */
-    public ?array $negatable_if_types = null;
-
-    /**
      * @var list<Clause>
      */
     public array $negated_clauses = [];

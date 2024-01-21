@@ -16,7 +16,6 @@ use Psalm\Type\Reconciler;
 
 use function array_diff_key;
 use function array_key_exists;
-use function array_keys;
 use function array_merge;
 use function count;
 use function in_array;
@@ -88,8 +87,6 @@ final class ElseAnalyzer
                 }
             }
         }
-
-        $old_else_context = clone $else_context;
 
         $pre_stmts_assigned_var_ids = $else_context->assigned_var_ids;
         $else_context->assigned_var_ids = [];
@@ -172,17 +169,6 @@ final class ElseAnalyzer
             );
 
             $if_scope->reasonable_clauses = [];
-        }
-
-        // update the parent context as necessary
-        if ($if_scope->negatable_if_types) {
-            $outer_context->update(
-                $old_else_context,
-                $else_context,
-                $has_leaving_statements,
-                array_keys($if_scope->negatable_if_types),
-                $if_scope->updated_vars,
-            );
         }
 
         if (!$has_ending_statements) {
