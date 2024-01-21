@@ -17,7 +17,6 @@ use Psalm\Type\Reconciler;
 use function array_diff_key;
 use function array_key_exists;
 use function array_merge;
-use function count;
 use function in_array;
 use function preg_match;
 use function preg_quote;
@@ -147,8 +146,9 @@ final class ElseAnalyzer
             : [ScopeAnalyzer::ACTION_NONE];
         // has a return/throw at end
         $has_ending_statements = $final_actions === [ScopeAnalyzer::ACTION_END];
+
         $has_leaving_statements = $has_ending_statements
-            || (count($final_actions) && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
+            || ($final_actions && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
 
         $has_break_statement = $final_actions === [ScopeAnalyzer::ACTION_BREAK];
         $has_continue_statement = $final_actions === [ScopeAnalyzer::ACTION_CONTINUE];
