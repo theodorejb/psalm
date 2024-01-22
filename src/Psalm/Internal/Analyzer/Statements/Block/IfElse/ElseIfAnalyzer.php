@@ -139,20 +139,22 @@ final class ElseIfAnalyzer
             $assigned_in_conditional_var_ids,
         );
 
-        $elseif_context_clauses = [...$entry_clauses, ...$elseif_clauses];
+        $elseif_clauses = Algebra::simplifyCNF($elseif_clauses);
+
+        $elseif_context->clauses = $entry_clauses
+            ? Algebra::simplifyCNF([...$entry_clauses, ...$elseif_clauses])
+            : $elseif_clauses;
 
         if ($elseif_context->reconciled_expression_clauses) {
             $reconciled_expression_clauses = $elseif_context->reconciled_expression_clauses;
 
-            $elseif_context_clauses = array_values(
+            $elseif_context->clauses = array_values(
                 array_filter(
-                    $elseif_context_clauses,
+                    $elseif_context->clauses,
                     static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses, true),
                 ),
             );
         }
-
-        $elseif_context->clauses = Algebra::simplifyCNF($elseif_context_clauses);
 
         $active_elseif_types = [];
 

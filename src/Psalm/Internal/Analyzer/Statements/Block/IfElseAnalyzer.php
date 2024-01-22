@@ -171,11 +171,9 @@ final class IfElseAnalyzer
 
         $if_clauses = Algebra::simplifyCNF($if_clauses);
 
-        $if_context_clauses = [...$entry_clauses, ...$if_clauses];
-
         $if_context->clauses = $entry_clauses
-            ? Algebra::simplifyCNF($if_context_clauses)
-            : $if_context_clauses;
+            ? Algebra::simplifyCNF([...$entry_clauses, ...$if_clauses])
+            : $if_clauses;
 
         if ($if_context->reconciled_expression_clauses) {
             $reconciled_expression_clauses = $if_context->reconciled_expression_clauses;
@@ -183,7 +181,7 @@ final class IfElseAnalyzer
             $if_context->clauses = array_values(
                 array_filter(
                     $if_context->clauses,
-                    static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses),
+                    static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses, true),
                 ),
             );
 
