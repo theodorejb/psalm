@@ -257,6 +257,7 @@ final class ElseIfAnalyzer
 
         $pre_stmts_assigned_var_ids = $elseif_context->assigned_var_ids;
         $elseif_context->assigned_var_ids = [];
+
         $pre_stmts_possibly_assigned_var_ids = $elseif_context->possibly_assigned_var_ids;
         $elseif_context->possibly_assigned_var_ids = [];
 
@@ -273,11 +274,10 @@ final class ElseIfAnalyzer
         }
 
         $new_stmts_assigned_var_ids = $elseif_context->assigned_var_ids;
-        $elseif_context->assigned_var_ids = $pre_stmts_assigned_var_ids + $new_stmts_assigned_var_ids;
+        $elseif_context->assigned_var_ids += $pre_stmts_assigned_var_ids;
 
         $new_stmts_possibly_assigned_var_ids = $elseif_context->possibly_assigned_var_ids;
-        $elseif_context->possibly_assigned_var_ids =
-            $pre_stmts_possibly_assigned_var_ids + $new_stmts_possibly_assigned_var_ids;
+        $elseif_context->possibly_assigned_var_ids += $pre_stmts_possibly_assigned_var_ids;
 
         foreach ($elseif_context->byref_constraints as $var_id => $byref_constraint) {
             if (isset($outer_context->byref_constraints[$var_id])
