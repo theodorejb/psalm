@@ -9,10 +9,9 @@ use Psalm\Context;
 use Psalm\Exception\ComplicatedExpressionException;
 use Psalm\Exception\ScopeAnalysisException;
 use Psalm\Internal\Algebra;
-use Psalm\Internal\Algebra\FormulaGenerator;
-use Psalm\Internal\Analyzer\AlgebraAnalyzer;
 use Psalm\Internal\Analyzer\ScopeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Block\IfConditionalAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Block\IfElseAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Clause;
 use Psalm\Internal\Scope\IfScope;
@@ -22,7 +21,6 @@ use Psalm\IssueBuffer;
 use Psalm\Type\Reconciler;
 
 use function array_combine;
-use function array_diff;
 use function array_diff_key;
 use function array_filter;
 use function array_key_exists;
@@ -30,7 +28,6 @@ use function array_keys;
 use function array_merge;
 use function array_reduce;
 use function array_unique;
-use function array_values;
 use function count;
 use function in_array;
 use function preg_match;
@@ -82,38 +79,7 @@ final class ElseIfAnalyzer
         }
 
         $elseif_cond_id = spl_object_id($elseif->cond);
-
-        $elseif_clauses = FormulaGenerator::getFormula(
-            $elseif_cond_id,
-            $elseif_cond_id,
-            $elseif->cond,
-            $else_context->self,
-            $statements_analyzer,
-            $codebase,
-        );
-
-        if (count($elseif_clauses) > 200) {
-            $elseif_clauses = [];
-        }
-
-        $elseif_clauses_handled = [];
-        foreach ($elseif_clauses as $clause) {
-            $keys = array_keys($clause->possibilities);
-            $mixed_var_ids = array_diff($mixed_var_ids, $keys);
-
-            foreach ($keys as $key) {
-                foreach ($mixed_var_ids as $mixed_var_id) {
-                    if (preg_match('/^' . preg_quote($mixed_var_id, '/') . '(\[|-)/', $key)) {
-                        $clause = new Clause([], $elseif_cond_id, $elseif_cond_id, true);
-                        break 2;
-                    }
-                }
-            }
-
-            $elseif_clauses_handled[] = $clause;
-        }
-
-        $elseif_clauses = $elseif_clauses_handled;
+        $elseif_clauses = IfElseAnalyzer::getIfClauses($statements_analyzer, $elseif, $outer_context, $mixed_var_ids);
 
         $entry_clauses = [];
 
@@ -130,31 +96,14 @@ final class ElseIfAnalyzer
             $entry_clauses[] = $c;
         }
 
-        // this will see whether any of the clauses in set A conflict with the clauses in set B
-        AlgebraAnalyzer::checkForParadox(
+        $elseif_clauses = IfElseAnalyzer::setContextClauses(
             $entry_clauses,
             $elseif_clauses,
             $statements_analyzer,
-            $elseif->cond,
+            $elseif,
             $assigned_in_conditional_var_ids,
+            $elseif_context,
         );
-
-        $elseif_clauses = Algebra::simplifyCNF($elseif_clauses);
-
-        $elseif_context->clauses = $entry_clauses
-            ? Algebra::simplifyCNF([...$entry_clauses, ...$elseif_clauses])
-            : $elseif_clauses;
-
-        if ($elseif_context->reconciled_expression_clauses) {
-            $reconciled_expression_clauses = $elseif_context->reconciled_expression_clauses;
-
-            $elseif_context->clauses = array_values(
-                array_filter(
-                    $elseif_context->clauses,
-                    static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses, true),
-                ),
-            );
-        }
 
         $active_elseif_types = [];
 
@@ -261,11 +210,7 @@ final class ElseIfAnalyzer
         $pre_stmts_possibly_assigned_var_ids = $elseif_context->possibly_assigned_var_ids;
         $elseif_context->possibly_assigned_var_ids = [];
 
-        if ($statements_analyzer->analyze(
-            $elseif->stmts,
-            $elseif_context,
-        ) === false
-        ) {
+        if ($statements_analyzer->analyze($elseif->stmts, $elseif_context) === false) {
             return false;
         }
 

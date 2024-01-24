@@ -28,6 +28,7 @@ use function array_diff;
 use function array_filter;
 use function array_intersect_key;
 use function array_keys;
+use function array_map;
 use function array_merge;
 use function array_unique;
 use function array_values;
@@ -124,94 +125,23 @@ final class IfElseAnalyzer
             }
         }
 
-        $cond_object_id = spl_object_id($stmt->cond);
-
-        $if_clauses = FormulaGenerator::getFormula(
-            $cond_object_id,
-            $cond_object_id,
-            $stmt->cond,
-            $context->self,
-            $statements_analyzer,
-            $codebase,
-        );
-
-        if (count($if_clauses) > 200) {
-            $if_clauses = [];
-        }
-
-        $if_clauses_handled = [];
-        foreach ($if_clauses as $clause) {
-            $keys = array_keys($clause->possibilities);
-            $mixed_var_ids = array_diff($mixed_var_ids, $keys);
-
-            foreach ($keys as $key) {
-                foreach ($mixed_var_ids as $mixed_var_id) {
-                    if (preg_match('/^' . preg_quote($mixed_var_id, '/') . '(\[|-)/', $key)) {
-                        $clause = new Clause([], $cond_object_id, $cond_object_id, true);
-                        break 2;
-                    }
-                }
-            }
-
-            $if_clauses_handled[] = $clause;
-        }
-
-        $if_clauses = $if_clauses_handled;
+        $if_clauses = self::getIfClauses($statements_analyzer, $stmt, $context, $mixed_var_ids);
 
         $entry_clauses = $context->clauses;
 
-        // this will see whether any of the clauses in set A conflict with the clauses in set B
-        AlgebraAnalyzer::checkForParadox(
+        $if_clauses = self::setContextClauses(
             $entry_clauses,
             $if_clauses,
             $statements_analyzer,
-            $stmt->cond,
+            $stmt,
             $assigned_in_conditional_var_ids,
+            $if_context,
         );
-
-        $if_clauses = Algebra::simplifyCNF($if_clauses);
-
-        $if_context->clauses = $entry_clauses
-            ? Algebra::simplifyCNF([...$entry_clauses, ...$if_clauses])
-            : $if_clauses;
-
-        if ($if_context->reconciled_expression_clauses) {
-            $reconciled_expression_clauses = $if_context->reconciled_expression_clauses;
-
-            $if_context->clauses = array_values(
-                array_filter(
-                    $if_context->clauses,
-                    static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses, true),
-                ),
-            );
-        }
 
         // define this before we alter local clauses after reconciliation
         $if_scope->reasonable_clauses = $if_context->clauses;
 
-        try {
-            $if_scope->negated_clauses = Algebra::negateFormula($if_clauses);
-        } catch (ComplicatedExpressionException $e) {
-            try {
-                $if_scope->negated_clauses = FormulaGenerator::getFormula(
-                    $cond_object_id,
-                    $cond_object_id,
-                    new VirtualBooleanNot($stmt->cond),
-                    $context->self,
-                    $statements_analyzer,
-                    $codebase,
-                    false,
-                );
-            } catch (ComplicatedExpressionException $e) {
-                $if_scope->negated_clauses = [];
-            }
-        }
-
-        $if_scope->negated_types = Algebra::getTruthsFromFormula(
-            Algebra::simplifyCNF(
-                [...$context->clauses, ...$if_scope->negated_clauses],
-            ),
-        );
+        self::setNegatedClausesAndTypes($if_scope, $if_clauses, $statements_analyzer, $stmt, $context);
 
         $temp_else_context = clone $post_if_context;
 
@@ -436,5 +366,132 @@ final class IfElseAnalyzer
         }
 
         return null;
+    }
+
+    /**
+     * @param PhpParser\Node\Stmt\If_|PhpParser\Node\Stmt\ElseIf_|PhpParser\Node\Expr\Ternary $stmt
+     * @param list<string> $mixed_var_ids
+     * @return list<Clause>
+     */
+    public static function getIfClauses(
+        StatementsAnalyzer $statements_analyzer,
+        $stmt,
+        Context $context,
+        array $mixed_var_ids
+    ): array {
+        $cond_object_id = spl_object_id($stmt->cond);
+
+        $if_clauses = FormulaGenerator::getFormula(
+            $cond_object_id,
+            $cond_object_id,
+            $stmt->cond,
+            $context->self,
+            $statements_analyzer,
+            $statements_analyzer->getCodebase(),
+        );
+
+        if (count($if_clauses) > 200) {
+            $if_clauses = [];
+        }
+
+        return array_map(
+            static function (Clause $c) use ($mixed_var_ids, $cond_object_id): Clause {
+                $keys = array_keys($c->possibilities);
+                $mixed_var_ids = array_diff($mixed_var_ids, $keys);
+
+                foreach ($keys as $key) {
+                    foreach ($mixed_var_ids as $mixed_var_id) {
+                        if (preg_match('/^' . preg_quote($mixed_var_id, '/') . '(\[|-)/', $key)) {
+                            return new Clause([], $cond_object_id, $cond_object_id, true);
+                        }
+                    }
+                }
+
+                return $c;
+            },
+            $if_clauses,
+        );
+    }
+
+    /**
+     * @param list<Clause> $entry_clauses
+     * @param list<Clause> $if_clauses
+     * @param PhpParser\Node\Stmt\If_|PhpParser\Node\Stmt\ElseIf_ $stmt
+     * @param array<string, int> $assigned_in_conditional_var_ids
+     * @return list<Clause>
+     */
+    public static function setContextClauses(
+        array $entry_clauses,
+        array $if_clauses,
+        StatementsAnalyzer $statements_analyzer,
+        $stmt,
+        array $assigned_in_conditional_var_ids,
+        Context $if_context
+    ): array {
+        // this will see whether any of the clauses in set A conflict with the clauses in set B
+        AlgebraAnalyzer::checkForParadox(
+            $entry_clauses,
+            $if_clauses,
+            $statements_analyzer,
+            $stmt->cond,
+            $assigned_in_conditional_var_ids,
+        );
+
+        $if_clauses = Algebra::simplifyCNF($if_clauses);
+
+        $if_context->clauses = $entry_clauses
+            ? Algebra::simplifyCNF([...$entry_clauses, ...$if_clauses])
+            : $if_clauses;
+
+        if ($if_context->reconciled_expression_clauses) {
+            $reconciled_expression_clauses = $if_context->reconciled_expression_clauses;
+
+            $if_context->clauses = array_values(
+                array_filter(
+                    $if_context->clauses,
+                    static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses, true),
+                ),
+            );
+        }
+
+        return $if_clauses;
+    }
+
+    /**
+     * @param list<Clause> $if_clauses
+     * @param PhpParser\Node\Stmt\If_|PhpParser\Node\Expr\Ternary $stmt
+     */
+    public static function setNegatedClausesAndTypes(
+        IfScope $if_scope,
+        array $if_clauses,
+        StatementsAnalyzer $statements_analyzer,
+        $stmt,
+        Context $context
+    ): void {
+        $cond_object_id = spl_object_id($stmt->cond);
+
+        try {
+            $if_scope->negated_clauses = Algebra::negateFormula($if_clauses);
+        } catch (ComplicatedExpressionException $e) {
+            try {
+                $if_scope->negated_clauses = FormulaGenerator::getFormula(
+                    $cond_object_id,
+                    $cond_object_id,
+                    new VirtualBooleanNot($stmt->cond),
+                    $context->self,
+                    $statements_analyzer,
+                    $statements_analyzer->getCodebase(),
+                    false,
+                );
+            } catch (ComplicatedExpressionException $e) {
+                $if_scope->negated_clauses = [];
+            }
+        }
+
+        $if_scope->negated_types = Algebra::getTruthsFromFormula(
+            Algebra::simplifyCNF(
+                [...$context->clauses, ...$if_scope->negated_clauses],
+            ),
+        );
     }
 }
