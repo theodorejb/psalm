@@ -280,8 +280,6 @@ final class ElseIfAnalyzer
             } else {
                 $if_scope->reasonable_clauses = [];
             }
-        } else {
-            $if_scope->reasonable_clauses = [];
         }
 
         if ($negated_elseif_types) {
