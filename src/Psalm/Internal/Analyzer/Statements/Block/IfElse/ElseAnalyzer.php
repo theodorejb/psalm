@@ -37,15 +37,10 @@ final class ElseAnalyzer
         Context $outer_context
     ): ?bool {
         $codebase = $statements_analyzer->getCodebase();
+        $assigned_in_conditional_var_ids = [];
 
-        if (!$else && !$if_scope->negated_clauses && !$else_context->clauses) {
-            $if_scope->final_actions = array_merge([ScopeAnalyzer::ACTION_NONE], $if_scope->final_actions);
-            $if_scope->assigned_var_ids = [];
-            $if_scope->new_vars = [];
-            $if_scope->redefined_vars = [];
-            $if_scope->reasonable_clauses = [];
-
-            return null;
+        if (!$else) {
+            $else = new PhpParser\Node\Stmt\Else_();
         }
 
         $else_context->clauses = Algebra::simplifyCNF(
@@ -69,9 +64,7 @@ final class ElseAnalyzer
                 $statements_analyzer,
                 $statements_analyzer->getTemplateTypeMap() ?: [],
                 $else_context->inside_loop,
-                $else
-                    ? new CodeLocation($statements_analyzer->getSource(), $else, $outer_context->include_location)
-                    : null,
+                new CodeLocation($statements_analyzer->getSource(), $else, $outer_context->include_location),
             );
 
             $else_context->clauses = Context::removeReconciledClauses($else_context->clauses, $changed_var_ids)[0];
@@ -93,10 +86,8 @@ final class ElseAnalyzer
         $pre_possibly_assigned_var_ids = $else_context->possibly_assigned_var_ids;
         $else_context->possibly_assigned_var_ids = [];
 
-        if ($else) {
-            if ($statements_analyzer->analyze($else->stmts, $else_context) === false) {
-                return false;
-            }
+        if ($statements_analyzer->analyze($else->stmts, $else_context) === false) {
+            return false;
         }
 
         foreach ($else_context->parent_remove_vars as $var_id => $_) {
@@ -109,37 +100,33 @@ final class ElseAnalyzer
         $new_possibly_assigned_var_ids = $else_context->possibly_assigned_var_ids;
         $else_context->possibly_assigned_var_ids += $pre_possibly_assigned_var_ids;
 
-        if ($else) {
-            foreach ($else_context->byref_constraints as $var_id => $byref_constraint) {
-                if (isset($outer_context->byref_constraints[$var_id])
-                    && ($outer_constraint_type = $outer_context->byref_constraints[$var_id]->type)
-                    && $byref_constraint->type
-                    && !UnionTypeComparator::isContainedBy(
-                        $codebase,
-                        $byref_constraint->type,
-                        $outer_constraint_type,
-                    )
-                ) {
-                    IssueBuffer::maybeAdd(
-                        new ConflictingReferenceConstraint(
-                            'There is more than one pass-by-reference constraint on ' . $var_id,
-                            new CodeLocation($statements_analyzer, $else, $outer_context->include_location, true),
-                        ),
-                        $statements_analyzer->getSuppressedIssues(),
-                    );
-                } else {
-                    $outer_context->byref_constraints[$var_id] = $byref_constraint;
-                }
+        foreach ($else_context->byref_constraints as $var_id => $byref_constraint) {
+            if (isset($outer_context->byref_constraints[$var_id])
+                && ($outer_constraint_type = $outer_context->byref_constraints[$var_id]->type)
+                && $byref_constraint->type
+                && !UnionTypeComparator::isContainedBy(
+                    $codebase,
+                    $byref_constraint->type,
+                    $outer_constraint_type,
+                )
+            ) {
+                IssueBuffer::maybeAdd(
+                    new ConflictingReferenceConstraint(
+                        'There is more than one pass-by-reference constraint on ' . $var_id,
+                        new CodeLocation($statements_analyzer, $else, $outer_context->include_location, true),
+                    ),
+                    $statements_analyzer->getSuppressedIssues(),
+                );
+            } else {
+                $outer_context->byref_constraints[$var_id] = $byref_constraint;
             }
         }
 
-        $final_actions = $else
-            ? ScopeAnalyzer::getControlActions(
-                $else->stmts,
-                $statements_analyzer->node_data,
-                [],
-            )
-            : [ScopeAnalyzer::ACTION_NONE];
+        $final_actions = ScopeAnalyzer::getControlActions(
+            $else->stmts,
+            $statements_analyzer->node_data,
+            [],
+        );
         // has a return/throw at end
         $has_ending_statements = $final_actions === [ScopeAnalyzer::ACTION_END];
 
@@ -158,10 +145,9 @@ final class ElseAnalyzer
                 $if_scope,
                 $else_context,
                 $original_context,
-                $new_assigned_var_ids,
+                array_merge($new_assigned_var_ids, $assigned_in_conditional_var_ids),
                 $new_possibly_assigned_var_ids,
                 $if_scope->if_cond_changed_var_ids,
-                true,
             );
 
             $if_scope->reasonable_clauses = [];
