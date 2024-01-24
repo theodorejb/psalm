@@ -86,9 +86,11 @@ final class IfElseAnalyzer
                 null,
                 [],
             );
+            // has a return/throw at end
+            $has_ending_statements = $final_actions === [ScopeAnalyzer::ACTION_END];
 
-            $has_leaving_statements = $final_actions === [ScopeAnalyzer::ACTION_END]
-                || (count($final_actions) && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
+            $has_leaving_statements = $has_ending_statements
+                || ($final_actions && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
 
             if ($has_leaving_statements) {
                 $if_scope->post_leaving_if_context = clone $context;
@@ -228,7 +230,7 @@ final class IfElseAnalyzer
             return false;
         }
 
-        if (count($if_scope->if_actions) && !in_array(ScopeAnalyzer::ACTION_NONE, $if_scope->if_actions, true)
+        if ($if_scope->if_actions && !in_array(ScopeAnalyzer::ACTION_NONE, $if_scope->if_actions, true)
             && !$stmt->elseifs
         ) {
             $context->clauses = $else_context->clauses;
@@ -281,15 +283,8 @@ final class IfElseAnalyzer
             );
         }
 
-        $context->vars_possibly_in_scope = array_merge(
-            $context->vars_possibly_in_scope,
-            $if_scope->new_vars_possibly_in_scope,
-        );
-
-        $context->possibly_assigned_var_ids = array_merge(
-            $context->possibly_assigned_var_ids,
-            $if_scope->possibly_assigned_var_ids ?: [],
-        );
+        $context->vars_possibly_in_scope += $if_scope->new_vars_possibly_in_scope;
+        $context->possibly_assigned_var_ids += $if_scope->possibly_assigned_var_ids;
 
         // vars can only be defined/redefined if there was an else (defined in every block)
         $context->assigned_var_ids = array_merge(

@@ -162,7 +162,7 @@ final class ElseIfAnalyzer
             }
         }
 
-        $newly_reconciled_var_ids = [];
+        $changed_var_ids = [];
 
         // if the elseif has an || in the conditional, we cannot easily reason about it
         if ($reconcilable_elseif_types) {
@@ -171,7 +171,7 @@ final class ElseIfAnalyzer
                 $active_elseif_types,
                 $elseif_context->vars_in_scope,
                 $elseif_context->references_in_scope,
-                $newly_reconciled_var_ids,
+                $changed_var_ids,
                 $cond_referenced_var_ids,
                 $statements_analyzer,
                 $statements_analyzer->getTemplateTypeMap() ?: [],
@@ -185,20 +185,15 @@ final class ElseIfAnalyzer
                 ),
             );
 
-            if ($newly_reconciled_var_ids) {
-                $elseif_context->clauses = Context::removeReconciledClauses(
-                    $elseif_context->clauses,
-                    $newly_reconciled_var_ids,
-                )[0];
+            $elseif_context->clauses = Context::removeReconciledClauses($elseif_context->clauses, $changed_var_ids)[0];
 
-                foreach ($newly_reconciled_var_ids as $changed_var_id => $_) {
-                    foreach ($elseif_context->vars_in_scope as $var_id => $_) {
-                        if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
-                            && !array_key_exists($var_id, $newly_reconciled_var_ids)
-                            && !array_key_exists($var_id, $cond_referenced_var_ids)
-                        ) {
-                            $elseif_context->removePossibleReference($var_id);
-                        }
+            foreach ($changed_var_ids as $changed_var_id => $_) {
+                foreach ($elseif_context->vars_in_scope as $var_id => $_) {
+                    if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
+                        && !array_key_exists($var_id, $changed_var_ids)
+                        && !array_key_exists($var_id, $cond_referenced_var_ids)
+                    ) {
+                        $elseif_context->removePossibleReference($var_id);
                     }
                 }
             }
@@ -207,7 +202,7 @@ final class ElseIfAnalyzer
         $pre_stmts_assigned_var_ids = $elseif_context->assigned_var_ids;
         $elseif_context->assigned_var_ids = [];
 
-        $pre_stmts_possibly_assigned_var_ids = $elseif_context->possibly_assigned_var_ids;
+        $pre_possibly_assigned_var_ids = $elseif_context->possibly_assigned_var_ids;
         $elseif_context->possibly_assigned_var_ids = [];
 
         if ($statements_analyzer->analyze($elseif->stmts, $elseif_context) === false) {
@@ -218,11 +213,11 @@ final class ElseIfAnalyzer
             $outer_context->removeVarFromConflictingClauses($var_id);
         }
 
-        $new_stmts_assigned_var_ids = $elseif_context->assigned_var_ids;
+        $new_assigned_var_ids = $elseif_context->assigned_var_ids;
         $elseif_context->assigned_var_ids += $pre_stmts_assigned_var_ids;
 
-        $new_stmts_possibly_assigned_var_ids = $elseif_context->possibly_assigned_var_ids;
-        $elseif_context->possibly_assigned_var_ids += $pre_stmts_possibly_assigned_var_ids;
+        $new_possibly_assigned_var_ids = $elseif_context->possibly_assigned_var_ids;
+        $elseif_context->possibly_assigned_var_ids += $pre_possibly_assigned_var_ids;
 
         foreach ($elseif_context->byref_constraints as $var_id => $byref_constraint) {
             if (isset($outer_context->byref_constraints[$var_id])
@@ -255,23 +250,23 @@ final class ElseIfAnalyzer
         $has_ending_statements = $final_actions === [ScopeAnalyzer::ACTION_END];
 
         $has_leaving_statements = $has_ending_statements
-            || (count($final_actions) && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
+            || ($final_actions && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
 
         $has_break_statement = $final_actions === [ScopeAnalyzer::ACTION_BREAK];
         $has_continue_statement = $final_actions === [ScopeAnalyzer::ACTION_CONTINUE];
 
         $if_scope->final_actions = array_merge($final_actions, $if_scope->final_actions);
 
-        // update the parent context as necessary
+        // if it doesn't end in a return
         if (!$has_leaving_statements) {
             IfAnalyzer::updateIfScope(
                 $codebase,
                 $if_scope,
                 $elseif_context,
                 $outer_context,
-                array_merge($new_stmts_assigned_var_ids, $assigned_in_conditional_var_ids),
-                $new_stmts_possibly_assigned_var_ids,
-                $newly_reconciled_var_ids,
+                array_merge($new_assigned_var_ids, $assigned_in_conditional_var_ids),
+                $new_possibly_assigned_var_ids,
+                $changed_var_ids,
             );
 
             $reasonable_clause_count = count($if_scope->reasonable_clauses);
@@ -291,7 +286,7 @@ final class ElseIfAnalyzer
 
         if ($negated_elseif_types) {
             if ($has_leaving_statements) {
-                $newly_reconciled_var_ids = [];
+                $changed_var_ids = [];
 
                 $implied_outer_context = clone $elseif_context;
                 [$implied_outer_context->vars_in_scope, $implied_outer_context->references_in_scope] =
@@ -300,7 +295,7 @@ final class ElseIfAnalyzer
                         [],
                         $pre_conditional_context->vars_in_scope,
                         $pre_conditional_context->references_in_scope,
-                        $newly_reconciled_var_ids,
+                        $changed_var_ids,
                         [],
                         $statements_analyzer,
                         $statements_analyzer->getTemplateTypeMap() ?: [],
@@ -316,7 +311,7 @@ final class ElseIfAnalyzer
                 $outer_context->vars_possibly_in_scope,
             );
 
-            $possibly_assigned_var_ids = $new_stmts_possibly_assigned_var_ids;
+            $possibly_assigned_var_ids = $new_possibly_assigned_var_ids;
 
             if (!$has_leaving_statements ||
                 $elseif_context->loop_scope && !$has_continue_statement && !$has_break_statement
