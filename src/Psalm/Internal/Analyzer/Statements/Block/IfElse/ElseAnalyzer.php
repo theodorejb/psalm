@@ -94,11 +94,7 @@ final class ElseAnalyzer
         $else_context->possibly_assigned_var_ids = [];
 
         if ($else) {
-            if ($statements_analyzer->analyze(
-                $else->stmts,
-                $else_context,
-            ) === false
-            ) {
+            if ($statements_analyzer->analyze($else->stmts, $else_context) === false) {
                 return false;
             }
         }
