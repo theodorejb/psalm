@@ -5,34 +5,27 @@ namespace Psalm\Internal\Analyzer\Statements\Expression;
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Context;
-use Psalm\Exception\ComplicatedExpressionException;
 use Psalm\Exception\ScopeAnalysisException;
 use Psalm\Internal\Algebra;
-use Psalm\Internal\Algebra\FormulaGenerator;
 use Psalm\Internal\Analyzer\AlgebraAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Block\IfConditionalAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Block\IfElseAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Clause;
 use Psalm\Internal\Scope\IfScope;
 use Psalm\Internal\Type\AssertionReconciler;
-use Psalm\Node\Expr\VirtualBooleanNot;
 use Psalm\Storage\Assertion\Truthy;
 use Psalm\Type;
 use Psalm\Type\Reconciler;
 
-use function array_diff;
 use function array_filter;
 use function array_intersect;
 use function array_intersect_key;
 use function array_keys;
-use function array_map;
 use function array_merge;
 use function array_values;
-use function count;
 use function in_array;
-use function preg_match;
-use function preg_quote;
 use function spl_object_id;
 
 /**
@@ -69,20 +62,6 @@ final class TernaryAnalyzer
         }
 
         $cond_object_id = spl_object_id($stmt->cond);
-
-        $if_clauses = FormulaGenerator::getFormula(
-            $cond_object_id,
-            $cond_object_id,
-            $stmt->cond,
-            $context->self,
-            $statements_analyzer,
-            $codebase,
-        );
-
-        if (count($if_clauses) > 200) {
-            $if_clauses = [];
-        }
-
         $mixed_var_ids = [];
 
         foreach ($context->vars_in_scope as $var_id => $type) {
@@ -97,24 +76,7 @@ final class TernaryAnalyzer
             }
         }
 
-        $if_clauses = array_map(
-            static function (Clause $c) use ($mixed_var_ids, $cond_object_id): Clause {
-                $keys = array_keys($c->possibilities);
-
-                $mixed_var_ids = array_diff($mixed_var_ids, $keys);
-
-                foreach ($keys as $key) {
-                    foreach ($mixed_var_ids as $mixed_var_id) {
-                        if (preg_match('/^' . preg_quote($mixed_var_id, '/') . '(\[|-)/', $key)) {
-                            return new Clause([], $cond_object_id, $cond_object_id, true);
-                        }
-                    }
-                }
-
-                return $c;
-            },
-            $if_clauses,
-        );
+        $if_clauses = IfElseAnalyzer::getIfClauses($statements_analyzer, $stmt, $context, $mixed_var_ids);
 
         $entry_clauses = $context->clauses;
 
@@ -144,29 +106,7 @@ final class TernaryAnalyzer
             );
         }
 
-        try {
-            $if_scope->negated_clauses = Algebra::negateFormula($if_clauses);
-        } catch (ComplicatedExpressionException $e) {
-            try {
-                $if_scope->negated_clauses = FormulaGenerator::getFormula(
-                    $cond_object_id,
-                    $cond_object_id,
-                    new VirtualBooleanNot($stmt->cond),
-                    $context->self,
-                    $statements_analyzer,
-                    $codebase,
-                    false,
-                );
-            } catch (ComplicatedExpressionException $e) {
-                $if_scope->negated_clauses = [];
-            }
-        }
-
-        $if_scope->negated_types = Algebra::getTruthsFromFormula(
-            Algebra::simplifyCNF(
-                [...$context->clauses, ...$if_scope->negated_clauses],
-            ),
-        );
+        IfElseAnalyzer::setNegatedClausesAndTypes($if_scope, $if_clauses, $statements_analyzer, $stmt, $context);
 
         $active_if_types = [];
 
