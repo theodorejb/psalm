@@ -120,17 +120,15 @@ final class IfAnalyzer
                 $if_context->vars_possibly_in_scope[$var_id] = true;
             }
 
-            if ($changed_var_ids) {
-                $if_context->clauses = Context::removeReconciledClauses($if_context->clauses, $changed_var_ids)[0];
+            $if_context->clauses = Context::removeReconciledClauses($if_context->clauses, $changed_var_ids)[0];
 
-                foreach ($changed_var_ids as $changed_var_id => $_) {
-                    foreach ($if_context->vars_in_scope as $var_id => $_) {
-                        if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
-                            && !array_key_exists($var_id, $changed_var_ids)
-                            && !array_key_exists($var_id, $cond_referenced_var_ids)
-                        ) {
-                            $if_context->removePossibleReference($var_id);
-                        }
+            foreach ($changed_var_ids as $changed_var_id => $_) {
+                foreach ($if_context->vars_in_scope as $var_id => $_) {
+                    if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
+                        && !array_key_exists($var_id, $changed_var_ids)
+                        && !array_key_exists($var_id, $cond_referenced_var_ids)
+                    ) {
+                        $if_context->removePossibleReference($var_id);
                     }
                 }
             }
@@ -154,11 +152,7 @@ final class IfAnalyzer
         $if_context->assigned_var_ids = [];
         $if_context->possibly_assigned_var_ids = [];
 
-        if ($statements_analyzer->analyze(
-            $stmt->stmts,
-            $if_context,
-        ) === false
-        ) {
+        if ($statements_analyzer->analyze($stmt->stmts, $if_context) === false) {
             return false;
         }
 
