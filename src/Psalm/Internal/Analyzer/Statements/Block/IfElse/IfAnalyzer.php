@@ -21,6 +21,7 @@ use Psalm\Node\Expr\VirtualBooleanNot;
 use Psalm\Node\Expr\VirtualFuncCall;
 use Psalm\Node\Name\VirtualFullyQualified;
 use Psalm\Node\VirtualArg;
+use Psalm\Storage\Assertion;
 use Psalm\Type;
 use Psalm\Type\Reconciler;
 use Psalm\Type\Union;
@@ -92,49 +93,18 @@ final class IfAnalyzer
             );
         }
 
-        // if the if has an || in the conditional, we cannot easily reason about it
-        if ($reconcilable_if_types) {
-            $changed_var_ids = [];
-
-            [$if_context->vars_in_scope, $if_context->references_in_scope] = Reconciler::reconcileKeyedTypes(
-                $reconcilable_if_types,
-                $active_if_types,
-                $if_context->vars_in_scope,
-                $if_context->references_in_scope,
-                $changed_var_ids,
-                $cond_referenced_var_ids,
-                $statements_analyzer,
-                $statements_analyzer->getTemplateTypeMap() ?: [],
-                $if_context->inside_loop,
-                $outer_context->check_variables
-                    ? new CodeLocation(
-                        $statements_analyzer->getSource(),
-                        $stmt->cond instanceof PhpParser\Node\Expr\BooleanNot
-                            ? $stmt->cond->expr
-                            : $stmt->cond,
-                        $outer_context->include_location,
-                    ) : null,
-            );
-
-            foreach ($reconcilable_if_types as $var_id => $_) {
-                $if_context->vars_possibly_in_scope[$var_id] = true;
-            }
-
-            $if_context->clauses = Context::removeReconciledClauses($if_context->clauses, $changed_var_ids)[0];
-
-            foreach ($changed_var_ids as $changed_var_id => $_) {
-                foreach ($if_context->vars_in_scope as $var_id => $_) {
-                    if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
-                        && !array_key_exists($var_id, $changed_var_ids)
-                        && !array_key_exists($var_id, $cond_referenced_var_ids)
-                    ) {
-                        $if_context->removePossibleReference($var_id);
-                    }
-                }
-            }
-
-            $if_scope->if_cond_changed_var_ids = $changed_var_ids;
-        }
+        self::setVarsInScope(
+            $reconcilable_if_types,
+            $statements_analyzer,
+            $if_context,
+            $outer_context,
+            $active_if_types,
+            $cond_referenced_var_ids,
+            $stmt->cond instanceof PhpParser\Node\Expr\BooleanNot
+                ? $stmt->cond->expr
+                : $stmt->cond,
+            $if_scope,
+        );
 
         $if_context->reconciled_expression_clauses = [];
 
@@ -147,70 +117,35 @@ final class IfAnalyzer
 
         $codebase = $statements_analyzer->getCodebase();
 
-        $assigned_var_ids = $if_context->assigned_var_ids;
-        $possibly_assigned_var_ids = $if_context->possibly_assigned_var_ids;
+        $pre_stmts_assigned_var_ids = $if_context->assigned_var_ids;
         $if_context->assigned_var_ids = [];
+
+        $pre_possibly_assigned_var_ids = $if_context->possibly_assigned_var_ids;
         $if_context->possibly_assigned_var_ids = [];
 
         if ($statements_analyzer->analyze($stmt->stmts, $if_context) === false) {
             return false;
         }
 
-        foreach ($if_context->parent_remove_vars as $var_id => $_) {
-            $outer_context->removeVarFromConflictingClauses($var_id);
-        }
-
-        $final_actions = ScopeAnalyzer::getControlActions(
-            $stmt->stmts,
-            $statements_analyzer->node_data,
-            [],
+        [
+            $final_actions,
+            $new_assigned_var_ids,
+            $new_possibly_assigned_var_ids,
+            $has_ending_statements,
+            $has_leaving_statements,
+            $has_break_statement,
+            $has_continue_statement,
+        ] = self::determineActions(
+            $statements_analyzer,
+            $stmt,
+            $if_context,
+            $outer_context,
+            $pre_stmts_assigned_var_ids,
+            $pre_possibly_assigned_var_ids,
         );
-        // has a return/throw at end
-        $has_ending_statements = $final_actions === [ScopeAnalyzer::ACTION_END];
-
-        $has_leaving_statements = $has_ending_statements
-            || ($final_actions && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
-
-        $has_break_statement = $final_actions === [ScopeAnalyzer::ACTION_BREAK];
-        $has_continue_statement = $final_actions === [ScopeAnalyzer::ACTION_CONTINUE];
 
         $if_scope->if_actions = $final_actions;
         $if_scope->final_actions = $final_actions;
-
-        /** @var array<string, int> */
-        $new_assigned_var_ids = $if_context->assigned_var_ids;
-        /** @var array<string, bool> */
-        $new_possibly_assigned_var_ids = $if_context->possibly_assigned_var_ids;
-
-        $if_context->assigned_var_ids = array_merge($assigned_var_ids, $new_assigned_var_ids);
-        $if_context->possibly_assigned_var_ids = array_merge(
-            $possibly_assigned_var_ids,
-            $new_possibly_assigned_var_ids,
-        );
-
-        foreach ($if_context->byref_constraints as $var_id => $byref_constraint) {
-            if (isset($outer_context->byref_constraints[$var_id])
-                && $byref_constraint->type
-                && ($outer_constraint_type = $outer_context->byref_constraints[$var_id]->type)
-                && !UnionTypeComparator::isContainedBy(
-                    $codebase,
-                    $byref_constraint->type,
-                    $outer_constraint_type,
-                )
-            ) {
-                IssueBuffer::maybeAdd(
-                    new ConflictingReferenceConstraint(
-                        'There is more than one pass-by-reference constraint on ' . $var_id
-                            . ' between ' . $byref_constraint->type->getId()
-                            . ' and ' . $outer_constraint_type->getId(),
-                        new CodeLocation($statements_analyzer, $stmt, $outer_context->include_location, true),
-                    ),
-                    $statements_analyzer->getSuppressedIssues(),
-                );
-            } else {
-                $outer_context->byref_constraints[$var_id] = $byref_constraint;
-            }
-        }
 
         if (!$has_leaving_statements) {
             self::updateIfScope(
@@ -488,5 +423,136 @@ final class IfAnalyzer
                 );
             }
         }
+    }
+
+    /**
+     * @param array<string, list<list<Assertion>>> $reconcilable_if_types
+     * @param array<string, array<array<int, Assertion>>> $active_if_types
+     * @param array<string, bool> $cond_referenced_var_ids
+     */
+    public static function setVarsInScope(
+        array $reconcilable_if_types,
+        StatementsAnalyzer $statements_analyzer,
+        Context $if_context,
+        Context $outer_context,
+        array $active_if_types,
+        array $cond_referenced_var_ids,
+        PhpParser\Node $location_stmt,
+        IfScope $if_scope
+    ): void {
+        $changed_var_ids = [];
+
+        // if the if has an || in the conditional, we cannot easily reason about it
+        if ($reconcilable_if_types) {
+            [$if_context->vars_in_scope, $if_context->references_in_scope] = Reconciler::reconcileKeyedTypes(
+                $reconcilable_if_types,
+                $active_if_types,
+                $if_context->vars_in_scope,
+                $if_context->references_in_scope,
+                $changed_var_ids,
+                $cond_referenced_var_ids,
+                $statements_analyzer,
+                $statements_analyzer->getTemplateTypeMap() ?: [],
+                $if_context->inside_loop,
+                $outer_context->check_variables
+                    ? new CodeLocation(
+                        $statements_analyzer->getSource(),
+                        $location_stmt,
+                        $outer_context->include_location,
+                    ) : null,
+            );
+
+            foreach ($reconcilable_if_types as $var_id => $_) {
+                $if_context->vars_possibly_in_scope[$var_id] = true;
+            }
+
+            $if_context->clauses = Context::removeReconciledClauses($if_context->clauses, $changed_var_ids)[0];
+
+            foreach ($changed_var_ids as $changed_var_id => $_) {
+                foreach ($if_context->vars_in_scope as $var_id => $_) {
+                    if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
+                        && !array_key_exists($var_id, $changed_var_ids)
+                        && !array_key_exists($var_id, $cond_referenced_var_ids)
+                    ) {
+                        $if_context->removePossibleReference($var_id);
+                    }
+                }
+            }
+
+            $if_scope->if_cond_changed_var_ids = $changed_var_ids;
+        }
+    }
+
+    /**
+     * @param PhpParser\Node\Stmt\If_|PhpParser\Node\Stmt\ElseIf_|PhpParser\Node\Stmt\Else_ $stmt
+     * @param array<string, int> $pre_stmts_assigned_var_ids
+     * @param array<string, bool> $pre_possibly_assigned_var_ids
+     * @return list{list<ScopeAnalyzer::ACTION_*>, array<string, int>, array<string, bool>, bool, bool, bool, bool}
+     */
+    public static function determineActions(
+        StatementsAnalyzer $statements_analyzer,
+        $stmt,
+        Context $if_context,
+        Context $outer_context,
+        array $pre_stmts_assigned_var_ids,
+        array $pre_possibly_assigned_var_ids
+    ): array {
+        $codebase = $statements_analyzer->getCodebase();
+
+        foreach ($if_context->parent_remove_vars as $var_id => $_) {
+            $outer_context->removeVarFromConflictingClauses($var_id);
+        }
+
+        $new_assigned_var_ids = $if_context->assigned_var_ids;
+        $if_context->assigned_var_ids += $pre_stmts_assigned_var_ids;
+
+        $new_possibly_assigned_var_ids = $if_context->possibly_assigned_var_ids;
+        $if_context->possibly_assigned_var_ids += $pre_possibly_assigned_var_ids;
+
+        foreach ($if_context->byref_constraints as $var_id => $byref_constraint) {
+            if (isset($outer_context->byref_constraints[$var_id])
+                && ($outer_constraint_type = $outer_context->byref_constraints[$var_id]->type)
+                && $byref_constraint->type
+                && !UnionTypeComparator::isContainedBy(
+                    $codebase,
+                    $byref_constraint->type,
+                    $outer_constraint_type,
+                )
+            ) {
+                IssueBuffer::maybeAdd(
+                    new ConflictingReferenceConstraint(
+                        'There is more than one pass-by-reference constraint on ' . $var_id,
+                        new CodeLocation($statements_analyzer, $stmt, $outer_context->include_location, true),
+                    ),
+                    $statements_analyzer->getSuppressedIssues(),
+                );
+            } else {
+                $outer_context->byref_constraints[$var_id] = $byref_constraint;
+            }
+        }
+
+        $final_actions = ScopeAnalyzer::getControlActions(
+            $stmt->stmts,
+            $statements_analyzer->node_data,
+            [],
+        );
+        // has a return/throw at end
+        $has_ending_statements = $final_actions === [ScopeAnalyzer::ACTION_END];
+
+        $has_leaving_statements = $has_ending_statements
+            || ($final_actions && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
+
+        $has_break_statement = $final_actions === [ScopeAnalyzer::ACTION_BREAK];
+        $has_continue_statement = $final_actions === [ScopeAnalyzer::ACTION_CONTINUE];
+
+        return [
+            $final_actions,
+            $new_assigned_var_ids,
+            $new_possibly_assigned_var_ids,
+            $has_ending_statements,
+            $has_leaving_statements,
+            $has_break_statement,
+            $has_continue_statement,
+        ];
     }
 }

@@ -3,23 +3,13 @@
 namespace Psalm\Internal\Analyzer\Statements\Block\IfElse;
 
 use PhpParser;
-use Psalm\CodeLocation;
 use Psalm\Context;
 use Psalm\Internal\Algebra;
-use Psalm\Internal\Analyzer\ScopeAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Scope\IfScope;
-use Psalm\Internal\Type\Comparator\UnionTypeComparator;
-use Psalm\Issue\ConflictingReferenceConstraint;
-use Psalm\IssueBuffer;
-use Psalm\Type\Reconciler;
 
 use function array_diff_key;
-use function array_key_exists;
 use function array_merge;
-use function in_array;
-use function preg_match;
-use function preg_quote;
 
 /**
  * @internal
@@ -50,34 +40,17 @@ final class ElseAnalyzer
         $else_types = Algebra::getTruthsFromFormula($else_context->clauses);
 
         $original_context = clone $else_context;
-        $changed_var_ids = [];
 
-        if ($else_types) {
-            [$else_context->vars_in_scope, $else_context->references_in_scope] = Reconciler::reconcileKeyedTypes(
-                $else_types,
-                [],
-                $else_context->vars_in_scope,
-                $else_context->references_in_scope,
-                $changed_var_ids,
-                [],
-                $statements_analyzer,
-                $statements_analyzer->getTemplateTypeMap() ?: [],
-                $else_context->inside_loop,
-                new CodeLocation($statements_analyzer->getSource(), $else, $outer_context->include_location),
-            );
-
-            $else_context->clauses = Context::removeReconciledClauses($else_context->clauses, $changed_var_ids)[0];
-
-            foreach ($changed_var_ids as $changed_var_id => $_) {
-                foreach ($else_context->vars_in_scope as $var_id => $_) {
-                    if (preg_match('/' . preg_quote($changed_var_id, '/') . '[\]\[\-]/', $var_id)
-                        && !array_key_exists($var_id, $changed_var_ids)
-                    ) {
-                        $else_context->removePossibleReference($var_id);
-                    }
-                }
-            }
-        }
+        IfAnalyzer::setVarsInScope(
+            $else_types,
+            $statements_analyzer,
+            $else_context,
+            $outer_context,
+            [],
+            [],
+            $else,
+            $if_scope,
+        );
 
         $pre_stmts_assigned_var_ids = $else_context->assigned_var_ids;
         $else_context->assigned_var_ids = [];
@@ -89,51 +62,22 @@ final class ElseAnalyzer
             return false;
         }
 
-        foreach ($else_context->parent_remove_vars as $var_id => $_) {
-            $outer_context->removeVarFromConflictingClauses($var_id);
-        }
-
-        $new_assigned_var_ids = $else_context->assigned_var_ids;
-        $else_context->assigned_var_ids += $pre_stmts_assigned_var_ids;
-
-        $new_possibly_assigned_var_ids = $else_context->possibly_assigned_var_ids;
-        $else_context->possibly_assigned_var_ids += $pre_possibly_assigned_var_ids;
-
-        foreach ($else_context->byref_constraints as $var_id => $byref_constraint) {
-            if (isset($outer_context->byref_constraints[$var_id])
-                && ($outer_constraint_type = $outer_context->byref_constraints[$var_id]->type)
-                && $byref_constraint->type
-                && !UnionTypeComparator::isContainedBy(
-                    $codebase,
-                    $byref_constraint->type,
-                    $outer_constraint_type,
-                )
-            ) {
-                IssueBuffer::maybeAdd(
-                    new ConflictingReferenceConstraint(
-                        'There is more than one pass-by-reference constraint on ' . $var_id,
-                        new CodeLocation($statements_analyzer, $else, $outer_context->include_location, true),
-                    ),
-                    $statements_analyzer->getSuppressedIssues(),
-                );
-            } else {
-                $outer_context->byref_constraints[$var_id] = $byref_constraint;
-            }
-        }
-
-        $final_actions = ScopeAnalyzer::getControlActions(
-            $else->stmts,
-            $statements_analyzer->node_data,
-            [],
+        [
+            $final_actions,
+            $new_assigned_var_ids,
+            $new_possibly_assigned_var_ids,
+            $has_ending_statements,
+            $has_leaving_statements,
+            $has_break_statement,
+            $has_continue_statement,
+        ] = IfAnalyzer::determineActions(
+            $statements_analyzer,
+            $else,
+            $else_context,
+            $outer_context,
+            $pre_stmts_assigned_var_ids,
+            $pre_possibly_assigned_var_ids,
         );
-        // has a return/throw at end
-        $has_ending_statements = $final_actions === [ScopeAnalyzer::ACTION_END];
-
-        $has_leaving_statements = $has_ending_statements
-            || ($final_actions && !in_array(ScopeAnalyzer::ACTION_NONE, $final_actions, true));
-
-        $has_break_statement = $final_actions === [ScopeAnalyzer::ACTION_BREAK];
-        $has_continue_statement = $final_actions === [ScopeAnalyzer::ACTION_CONTINUE];
 
         $if_scope->final_actions = array_merge($final_actions, $if_scope->final_actions);
 
@@ -146,7 +90,7 @@ final class ElseAnalyzer
                 $original_context,
                 array_merge($new_assigned_var_ids, $assigned_in_conditional_var_ids),
                 $new_possibly_assigned_var_ids,
-                $changed_var_ids,
+                $if_scope->if_cond_changed_var_ids,
             );
 
             $if_scope->reasonable_clauses = [];
