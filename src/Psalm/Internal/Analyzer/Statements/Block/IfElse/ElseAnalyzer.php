@@ -50,10 +50,9 @@ final class ElseAnalyzer
         $else_types = Algebra::getTruthsFromFormula($else_context->clauses);
 
         $original_context = clone $else_context;
+        $changed_var_ids = [];
 
         if ($else_types) {
-            $changed_var_ids = [];
-
             [$else_context->vars_in_scope, $else_context->references_in_scope] = Reconciler::reconcileKeyedTypes(
                 $else_types,
                 [],
@@ -147,7 +146,7 @@ final class ElseAnalyzer
                 $original_context,
                 array_merge($new_assigned_var_ids, $assigned_in_conditional_var_ids),
                 $new_possibly_assigned_var_ids,
-                $if_scope->if_cond_changed_var_ids,
+                $changed_var_ids,
             );
 
             $if_scope->reasonable_clauses = [];
