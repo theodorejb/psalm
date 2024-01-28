@@ -108,10 +108,7 @@ final class IfAnalyzer
 
         $if_context->reconciled_expression_clauses = [];
 
-        $outer_context->vars_possibly_in_scope = array_merge(
-            $if_context->vars_possibly_in_scope,
-            $outer_context->vars_possibly_in_scope,
-        );
+        $outer_context->vars_possibly_in_scope += $if_context->vars_possibly_in_scope;
 
         $old_if_context = clone $if_context;
 
