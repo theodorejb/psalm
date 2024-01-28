@@ -157,14 +157,6 @@ final class ElseIfAnalyzer
                     static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses, true),
                 ),
             );
-
-            if (count($elseif_context->clauses) === 1
-                && $elseif_context->clauses[0]->wedge
-                && !$elseif_context->clauses[0]->possibilities
-            ) {
-                $elseif_context->clauses = [];
-                $elseif_context->reconciled_expression_clauses = [];
-            }
         }
 
         $active_elseif_types = [];

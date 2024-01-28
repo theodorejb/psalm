@@ -186,14 +186,6 @@ final class IfElseAnalyzer
                     static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses, true),
                 ),
             );
-
-            if (count($if_context->clauses) === 1
-                && $if_context->clauses[0]->wedge
-                && !$if_context->clauses[0]->possibilities
-            ) {
-                $if_context->clauses = [];
-                $if_context->reconciled_expression_clauses = [];
-            }
         }
 
         // define this before we alter local clauses after reconciliation
