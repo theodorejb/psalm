@@ -23,7 +23,6 @@ use function array_filter;
 use function array_map;
 use function array_merge;
 use function array_values;
-use function count;
 use function in_array;
 use function spl_object_id;
 
@@ -99,7 +98,7 @@ final class AndAnalyzer
 
         $left_referenced_var_ids = array_diff_key($left_referenced_var_ids, $left_assigned_var_ids);
 
-        $context_clauses = array_merge($left_context->clauses, $left_clauses);
+        $context_clauses = Algebra::simplifyCNF(array_merge($left_context->clauses, $left_clauses));
 
         if ($left_context->reconciled_expression_clauses) {
             $reconciled_expression_clauses = $left_context->reconciled_expression_clauses;
@@ -110,21 +109,12 @@ final class AndAnalyzer
                     static fn(Clause $c): bool => !in_array($c->hash, $reconciled_expression_clauses, true),
                 ),
             );
-
-            if (count($context_clauses) === 1
-                && $context_clauses[0]->wedge
-                && !$context_clauses[0]->possibilities
-            ) {
-                $context_clauses = [];
-            }
         }
-
-        $simplified_clauses = Algebra::simplifyCNF($context_clauses);
 
         $active_left_assertions = [];
 
         $left_type_assertions = Algebra::getTruthsFromFormula(
-            $simplified_clauses,
+            $context_clauses,
             $left_cond_id,
             $left_referenced_var_ids,
             $active_left_assertions,
