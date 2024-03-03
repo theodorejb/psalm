@@ -38,6 +38,21 @@ class ForTest extends TestCase
                       return $x;
                     }',
             ],
+            'falseToBool' => [
+                'code' => '<?php
+                    $a = false;
+
+                    for ($i = 0; $i < 10; $i++) {
+                      if ($a) {
+                        $a = false;
+                      } elseif ($i > 8) {
+                        $a = true;
+                      }
+                    }',
+                'assertions' => [
+                    '$a' => 'bool',
+                ],
+            ],
             'falseToBoolInContinueAndBreak' => [
                 'code' => '<?php
                     $a = false;
