@@ -486,7 +486,7 @@ class ForeachTest extends TestCase
                     '$a' => 'bool',
                 ],
             ],
-            'falseToBoolExplicitContinue' => [
+            'falseToTrueExplicitContinue' => [
                 'code' => '<?php
                     $a = false;
 
@@ -495,7 +495,7 @@ class ForeachTest extends TestCase
                       continue;
                     }',
                 'assertions' => [
-                    '$a' => 'bool',
+                    '$a' => 'true',
                 ],
             ],
             'falseToBoolInBreak' => [
